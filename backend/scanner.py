@@ -158,7 +158,9 @@ async def scan_input_dir(job_id: int) -> None:
     await _notify({
         "type": "scan_classified",
         "job_id": job_id,
+        "total_files": len(epub_files) + len(non_epub_files),
         "epub_count": len(unique_epub_files),
+        "total_epub_count": len(epub_files),
         "non_epub_count": len(non_epub_files),
         "duplicate_count": duplicate_count,
     })
@@ -377,6 +379,8 @@ async def _process_book(fpath: str, md5_hash: str, job_id: int, sem: asyncio.Sem
         **epub_meta,
     }
 
+    await _notify({"type": "llm_sent", "book_id": book_id, "file_name": fname})
+
     async with sem:
         try:
             llm_result = await enrich_book(book_data)
@@ -384,6 +388,8 @@ async def _process_book(fpath: str, md5_hash: str, job_id: int, sem: asyncio.Sem
             await db.update_book(book_id, state="error", error_message=f"LLM error: {e}")
             await _notify({"type": "book_update", "book_id": book_id, "state": "error", "file_name": fname, "error": str(e)[:200]})
             return
+
+    await _notify({"type": "llm_done", "book_id": book_id, "file_name": fname})
 
     # Store primary LLM result
     primary = llm_result["primary"]

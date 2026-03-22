@@ -373,3 +373,13 @@ async def get_latest_job() -> Optional[dict]:
         )
         row = await cursor.fetchone()
         return dict(row) if row else None
+
+
+async def clear_all() -> None:
+    """Clear all data from all tables for a fresh scan."""
+    async with get_db() as conn:
+        await conn.execute("DELETE FROM books")
+        await conn.execute("DELETE FROM non_epub_files")
+        await conn.execute("DELETE FROM duplicate_files")
+        await conn.execute("DELETE FROM processing_jobs")
+        await conn.commit()

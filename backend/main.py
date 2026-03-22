@@ -49,19 +49,22 @@ active_ws: set[WebSocket] = set()
 
 async def _broadcaster():
     """Read from progress_queue and fan out to all WebSocket clients."""
+    logger.info("Broadcaster task started")
     while True:
         try:
             msg = await progress_queue.get()
             dead = set()
-            for ws in active_ws:
+            for ws_conn in list(active_ws):
                 try:
-                    await ws.send_json(msg)
+                    await ws_conn.send_json(msg)
                 except Exception:
-                    dead.add(ws)
-            active_ws -= dead
+                    dead.add(ws_conn)
+            for d in dead:
+                active_ws.discard(d)
         except asyncio.CancelledError:
             break
-        except Exception:
+        except Exception as e:
+            logger.error(f"Broadcaster error: {e}")
             await asyncio.sleep(0.1)
 
 
@@ -137,6 +140,8 @@ async def ws_progress(websocket: WebSocket):
 
 @app.post("/api/scan")
 async def trigger_scan():
+    # Clear all previous scan data so each scan starts fresh
+    await db.clear_all()
     job_id = await db.create_job()
     asyncio.create_task(scan_input_dir(job_id))
     return {"job_id": job_id, "status": "started"}

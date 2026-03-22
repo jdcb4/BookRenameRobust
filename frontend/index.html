@@ -40,15 +40,58 @@
 
         <!-- Progress panel — hidden until scan starts -->
         <div class="progress-container" id="progress-container">
-          <div class="progress-phase" id="progress-phase">Ready</div>
+          <div class="progress-header" id="progress-header">
+            <span class="progress-phase" id="progress-phase">Ready</span>
+          </div>
+          <div class="pipeline-steps" id="pipeline-steps">
+            <div class="pipeline-step" id="step-files">
+              <div class="step-icon">1</div>
+              <div class="step-body">
+                <div class="step-label">Files Found</div>
+                <div class="step-value" id="step-files-val">--</div>
+              </div>
+            </div>
+            <div class="pipeline-arrow"></div>
+            <div class="pipeline-step" id="step-epubs">
+              <div class="step-icon">2</div>
+              <div class="step-body">
+                <div class="step-label">EPUBs to Process</div>
+                <div class="step-value" id="step-epubs-val">--</div>
+              </div>
+            </div>
+            <div class="pipeline-arrow"></div>
+            <div class="pipeline-step" id="step-llm-sent">
+              <div class="step-icon">3</div>
+              <div class="step-body">
+                <div class="step-label">Sent to AI</div>
+                <div class="step-value" id="step-llm-sent-val">--</div>
+              </div>
+            </div>
+            <div class="pipeline-arrow"></div>
+            <div class="pipeline-step" id="step-llm-done">
+              <div class="step-icon">4</div>
+              <div class="step-body">
+                <div class="step-label">Back from AI</div>
+                <div class="step-value" id="step-llm-done-val">--</div>
+              </div>
+            </div>
+            <div class="pipeline-arrow"></div>
+            <div class="pipeline-step" id="step-remaining">
+              <div class="step-icon">5</div>
+              <div class="step-body">
+                <div class="step-label">Remaining</div>
+                <div class="step-value" id="step-remaining-val">--</div>
+              </div>
+            </div>
+          </div>
           <div class="progress-bar-outer">
             <div class="progress-bar-inner" id="progress-bar" style="width:0%"></div>
           </div>
           <div class="progress-detail" id="progress-detail"></div>
         </div>
 
-        <!-- Call-to-action banner — shown after scan completes -->
-        <div class="cta-banner" id="cta-banner" style="display:none"></div>
+        <!-- Results banner — shown after scan completes -->
+        <div class="results-banner" id="results-banner" style="display:none"></div>
 
         <!-- Log output -->
         <div class="log-panel" id="log-panel" style="display:none"></div>

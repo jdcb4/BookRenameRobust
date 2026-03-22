@@ -192,16 +192,22 @@ body {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 16px;
+  padding: 20px;
   box-shadow: var(--shadow);
 }
 
 .progress-container.visible { display: block; }
 
+.progress-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
 .progress-phase {
   font-size: 14px;
   font-weight: 600;
-  margin-bottom: 8px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -221,6 +227,93 @@ body {
 
 .progress-phase.done { color: var(--success); }
 .progress-phase.done .spinner { display: none; }
+
+/* Pipeline steps */
+.pipeline-steps {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 16px;
+  overflow-x: auto;
+}
+
+.pipeline-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  min-width: 0;
+  flex: 1;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.pipeline-step.active {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, var(--bg-card));
+}
+
+.pipeline-step.complete {
+  border-color: var(--success);
+}
+
+.step-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--bg-hover);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.pipeline-step.active .step-icon {
+  background: var(--primary);
+  color: #fff;
+}
+
+.pipeline-step.complete .step-icon {
+  background: var(--success);
+  color: #fff;
+}
+
+.step-body {
+  min-width: 0;
+}
+
+.step-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.step-value {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.pipeline-arrow {
+  width: 20px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.pipeline-arrow::after {
+  content: "\2192";
+}
 
 .progress-bar-outer {
   background: var(--bg-hover);
@@ -247,41 +340,49 @@ body {
   justify-content: space-between;
 }
 
-/* CTA banner — shown after scan with next steps */
-.cta-banner {
+/* Results banner — shown after scan completes */
+.results-banner {
   background: var(--bg-card);
-  border: 2px solid var(--primary);
+  border: 2px solid var(--success);
   border-radius: var(--radius);
-  padding: 16px 20px;
+  padding: 20px;
   margin-bottom: 24px;
   box-shadow: var(--shadow);
 }
 
-.cta-banner h3 {
-  font-size: 15px;
-  margin-bottom: 8px;
-}
-
-.cta-banner .cta-items {
+.results-banner h3 {
+  font-size: 16px;
+  margin-bottom: 12px;
+  color: var(--success);
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 8px;
 }
 
-.cta-item {
+.results-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.result-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
   padding: 8px 12px;
   border-radius: 6px;
-  cursor: pointer;
-  transition: background 0.15s;
   font-size: 14px;
 }
 
-.cta-item:hover { background: var(--bg-hover); }
+.result-row:hover { background: var(--bg-hover); }
 
-.cta-item .cta-count {
+.result-row .result-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.result-row .result-count {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -291,14 +392,26 @@ body {
   font-weight: 700;
   font-size: 13px;
   color: #fff;
+  padding: 0 8px;
 }
 
-.cta-item .cta-count.review { background: var(--primary); }
-.cta-item .cta-count.flagged { background: var(--danger); }
-.cta-item .cta-count.non-english { background: var(--warning); }
-.cta-item .cta-count.auto { background: var(--success); }
-.cta-item .cta-count.error { background: var(--text-muted); }
-.cta-item .cta-count.duplicates { background: #6f42c1; }
+.result-count.review { background: var(--primary); }
+.result-count.flagged { background: var(--danger); }
+.result-count.non-english { background: var(--warning); }
+.result-count.auto { background: var(--success); }
+.result-count.error { background: var(--text-muted); }
+.result-count.duplicates { background: #6f42c1; }
+.result-count.non-epub { background: #fd7e14; }
+
+.result-row .result-action {
+  font-size: 13px;
+  color: var(--primary);
+  cursor: pointer;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.result-row .result-action:hover { text-decoration: underline; }
 
 /* Stat card clickable */
 .stat-card.clickable { cursor: pointer; transition: border-color 0.15s; }

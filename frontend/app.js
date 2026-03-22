@@ -64,34 +64,54 @@ function connectWS() {
   ws.onerror = () => ws.close();
 }
 
-let scanState = { phase: 'idle', total: 0, done: 0, errors: 0, epubCount: 0, dupeCount: 0, nonEpubCount: 0 };
+let scanState = {
+  phase: 'idle',
+  totalFiles: 0,
+  totalEpubs: 0,
+  epubCount: 0,
+  dupeCount: 0,
+  nonEpubCount: 0,
+  llmSent: 0,
+  llmDone: 0,
+  done: 0,
+  errors: 0,
+};
 
 function handleWSMessage(msg) {
   if (msg.type === 'scan_started') {
-    scanState = { phase: 'scanning', total: 0, done: 0, errors: 0, epubCount: 0, dupeCount: 0, nonEpubCount: 0 };
+    scanState = { phase: 'scanning', totalFiles: 0, totalEpubs: 0, epubCount: 0, dupeCount: 0, nonEpubCount: 0, llmSent: 0, llmDone: 0, done: 0, errors: 0 };
     showProgress();
     setPhase('Scanning input folder...', false);
+    updatePipelineSteps();
     appendLog(`Scan started (Job #${msg.job_id})`);
     document.getElementById('btn-scan').disabled = true;
     document.getElementById('btn-scan').textContent = 'Scanning...';
   } else if (msg.type === 'scan_classified') {
+    scanState.totalFiles = msg.total_files;
+    scanState.totalEpubs = msg.total_epub_count;
     scanState.epubCount = msg.epub_count;
     scanState.dupeCount = msg.duplicate_count;
     scanState.nonEpubCount = msg.non_epub_count;
-    scanState.total = msg.epub_count;
     scanState.phase = 'processing';
-    setPhase(`Processing ${msg.epub_count} books with LLM...`, false);
-    setDetail(`0 of ${msg.epub_count} complete`, '');
-    appendLog(`Found ${msg.epub_count} EPUBs, ${msg.non_epub_count} non-EPUB files, ${msg.duplicate_count} duplicates`);
+    setPhase(`Processing ${msg.epub_count} books...`, false);
+    appendLog(`Found ${msg.total_files} files: ${msg.total_epub_count} EPUBs (${msg.epub_count} unique), ${msg.non_epub_count} non-EPUB, ${msg.duplicate_count} duplicates`);
+    updatePipelineSteps();
     refreshCounts();
+  } else if (msg.type === 'llm_sent') {
+    scanState.llmSent++;
+    updatePipelineSteps();
+  } else if (msg.type === 'llm_done') {
+    scanState.llmDone++;
+    updatePipelineSteps();
   } else if (msg.type === 'progress') {
     scanState.done = msg.done;
     scanState.errors = msg.errors;
-    const pct = scanState.total > 0 ? Math.round((msg.done / scanState.total) * 100) : 0;
+    const pct = scanState.epubCount > 0 ? Math.round((msg.done / scanState.epubCount) * 100) : 0;
     setBar(pct, false);
     const errorText = msg.errors > 0 ? ` (${msg.errors} errors)` : '';
     setPhase(`Processing books... ${pct}%`, false);
-    setDetail(`${msg.done} of ${scanState.total} complete${errorText}`, `${scanState.total - msg.done} remaining`);
+    setDetail(`${msg.done} of ${scanState.epubCount} complete${errorText}`, `${scanState.epubCount - msg.done} remaining`);
+    updatePipelineSteps();
     refreshCounts();
   } else if (msg.type === 'scan_completed') {
     scanState.phase = 'done';
@@ -101,9 +121,10 @@ function handleWSMessage(msg) {
     appendLog('Scan completed!');
     document.getElementById('btn-scan').disabled = false;
     document.getElementById('btn-scan').textContent = 'Scan Input Folder';
+    updatePipelineSteps();
     refreshCounts();
     refreshCurrentView();
-    showCTABanner();
+    showResultsBanner();
   } else if (msg.type === 'book_update') {
     const stateLabel = {
       'review': 'Needs review', 'auto_accepted': 'Auto-accepted',
@@ -115,6 +136,46 @@ function handleWSMessage(msg) {
       refreshCounts();
     }
   }
+}
+
+function updatePipelineSteps() {
+  const s = scanState;
+  const isScanning = s.phase === 'scanning';
+  const isProcessing = s.phase === 'processing';
+  const isDone = s.phase === 'done';
+
+  // Step 1: Files Found
+  setStep('step-files', s.totalFiles > 0 ? s.totalFiles : (isScanning ? '...' : '--'),
+    isScanning && s.totalFiles === 0, s.totalFiles > 0);
+
+  // Step 2: EPUBs to Process
+  const epubText = s.epubCount > 0 ? s.epubCount : (isScanning ? '...' : '--');
+  setStep('step-epubs', epubText,
+    isScanning && s.epubCount === 0, s.epubCount > 0);
+
+  // Step 3: Sent to AI
+  const sentText = isProcessing || isDone ? s.llmSent : '--';
+  setStep('step-llm-sent', sentText,
+    isProcessing && s.llmSent < s.epubCount, isDone || (isProcessing && s.llmSent >= s.epubCount));
+
+  // Step 4: Back from AI
+  const doneText = isProcessing || isDone ? s.llmDone : '--';
+  setStep('step-llm-done', doneText,
+    isProcessing && s.llmDone < s.epubCount, isDone || (isProcessing && s.llmDone >= s.epubCount));
+
+  // Step 5: Remaining
+  const remaining = isProcessing ? (s.epubCount - s.done) : (isDone ? 0 : '--');
+  setStep('step-remaining', remaining,
+    isProcessing && remaining > 0, isDone);
+}
+
+function setStep(id, value, active, complete) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.toggle('active', active && !complete);
+  el.classList.toggle('complete', complete);
+  const valEl = document.getElementById(id + '-val');
+  if (valEl) valEl.textContent = value;
 }
 
 function setPhase(text, done) {
@@ -137,56 +198,47 @@ function setDetail(left, right) {
 function showProgress() {
   document.getElementById('progress-container').classList.add('visible');
   document.getElementById('log-panel').style.display = 'block';
-  document.getElementById('cta-banner').style.display = 'none';
+  document.getElementById('results-banner').style.display = 'none';
 }
 
-function showCTABanner() {
-  const banner = document.getElementById('cta-banner');
+function showResultsBanner() {
+  const banner = document.getElementById('results-banner');
   const reviewCount = (bookCounts.review || 0) + (bookCounts.approved || 0);
   const flaggedCount = bookCounts.flagged_quality || 0;
   const nonEngCount = bookCounts.non_english || 0;
   const autoCount = (bookCounts.auto_accepted || 0) + (bookCounts.committed || 0);
   const errorCount = bookCounts.error || 0;
 
-  // Only show if there's something to act on
-  if (reviewCount + flaggedCount + nonEngCount + autoCount + errorCount === 0) {
-    banner.style.display = 'none';
-    return;
-  }
+  let rows = [];
 
-  let items = [];
+  if (autoCount > 0) {
+    rows.push(resultRow('auto', autoCount, 'auto-processed with high confidence', 'auto-processed'));
+  }
   if (reviewCount > 0) {
-    items.push(`<div class="cta-item" onclick="switchTab('review')">
-      <span class="cta-count review">${reviewCount}</span>
-      <span>books need your review — click to open the Review Queue</span>
-    </div>`);
+    rows.push(resultRow('review', reviewCount, 'to review', 'review'));
   }
   if (flaggedCount > 0) {
-    items.push(`<div class="cta-item" onclick="switchTab('flagged')">
-      <span class="cta-count flagged">${flaggedCount}</span>
-      <span>books have quality issues — review in Flagged Quality</span>
-    </div>`);
+    rows.push(resultRow('flagged', flaggedCount, 'with quality issues', 'flagged'));
   }
   if (nonEngCount > 0) {
-    items.push(`<div class="cta-item" onclick="switchTab('non-english')">
-      <span class="cta-count non-english">${nonEngCount}</span>
-      <span>non-English books detected — review or skip</span>
-    </div>`);
+    rows.push(resultRow('non-english', nonEngCount, 'non-English books', 'non-english'));
   }
-  if (autoCount > 0) {
-    items.push(`<div class="cta-item" onclick="switchTab('auto-processed')">
-      <span class="cta-count auto">${autoCount}</span>
-      <span>books auto-accepted with high confidence</span>
-    </div>`);
+  if (scanState.dupeCount > 0) {
+    rows.push(resultRow('duplicates', scanState.dupeCount, 'duplicate files found', 'duplicates'));
+  }
+  if (scanState.nonEpubCount > 0) {
+    rows.push(resultRow('non-epub', scanState.nonEpubCount, 'non-EPUB files', 'non-epub'));
   }
   if (errorCount > 0) {
-    items.push(`<div class="cta-item" onclick="appendLog('Check errors in the log below')">
-      <span class="cta-count error">${errorCount}</span>
-      <span>books had errors during processing</span>
-    </div>`);
+    rows.push(resultRow('error', errorCount, 'errors during processing', null));
   }
 
-  banner.innerHTML = `<h3>Next Steps</h3><div class="cta-items">${items.join('')}</div>`;
+  if (rows.length === 0) {
+    banner.innerHTML = `<h3>&#10003; Scan Complete</h3><p style="color:var(--text-muted)">No books found to process.</p>`;
+  } else {
+    banner.innerHTML = `<h3>&#10003; Scan Complete</h3><div class="results-list">${rows.join('')}</div>`;
+  }
+
   banner.style.display = 'block';
 
   // Show commit button if there are approved books
@@ -194,6 +246,16 @@ function showCTABanner() {
   if ((bookCounts.approved || 0) + (bookCounts.auto_accepted || 0) > 0) {
     commitBtn.style.display = 'inline-flex';
   }
+}
+
+function resultRow(type, count, label, tabName) {
+  const action = tabName
+    ? `<span class="result-action" onclick="switchTab('${tabName}')">Go to ${tabName.replace('-', ' ')} &rarr;</span>`
+    : '';
+  return `<div class="result-row">
+    <span class="result-label"><span class="result-count ${type}">${count}</span> ${esc(label)}</span>
+    ${action}
+  </div>`;
 }
 
 function switchTab(tabName) {
@@ -833,6 +895,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-scan').addEventListener('click', async () => {
     try {
       document.getElementById('log-panel').textContent = '';
+      document.getElementById('results-banner').style.display = 'none';
+      document.getElementById('btn-commit-all').style.display = 'none';
       const result = await api('POST', '/api/scan');
       toast(`Scan started (Job #${result.job_id})`, 'info');
       showProgress();
