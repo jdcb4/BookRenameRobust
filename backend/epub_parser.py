@@ -194,21 +194,13 @@ def write_metadata_and_move(
             book.metadata[DC_NS].pop("description", None)
         book.add_metadata(DC_NS, "description", metadata["description"])
 
-    # --- Set subjects (genre, subgenre, and original subjects) ---
+    # --- Set subjects — ONLY genre and subgenre, all previous tags removed ---
     if DC_NS in book.metadata:
         book.metadata[DC_NS].pop("subject", None)
-    subjects = []
     if metadata.get("genre"):
-        subjects.append(metadata["genre"])
+        book.add_metadata(DC_NS, "subject", metadata["genre"])
     if metadata.get("subgenre"):
-        subjects.append(metadata["subgenre"])
-    if metadata.get("subjects"):
-        if isinstance(metadata["subjects"], str):
-            subjects.extend(s.strip() for s in metadata["subjects"].split(",") if s.strip())
-        elif isinstance(metadata["subjects"], list):
-            subjects.extend(metadata["subjects"])
-    for subj in subjects:
-        book.add_metadata(DC_NS, "subject", subj)
+        book.add_metadata(DC_NS, "subject", metadata["subgenre"])
 
     # --- Set calibre series metadata ---
     # Remove existing calibre meta entries
