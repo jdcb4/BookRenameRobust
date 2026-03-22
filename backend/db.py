@@ -1,5 +1,6 @@
 """SQLite database schema, connection helper, and queries."""
 
+import asyncio
 import json
 import os
 from contextlib import asynccontextmanager
@@ -166,24 +167,64 @@ CREATE INDEX IF NOT EXISTS idx_duplicate_md5 ON duplicate_files(md5_hash);
 """
 
 
+# ---------------------------------------------------------------------------
+# Shared connection singleton — avoids opening hundreds of connections
+# ---------------------------------------------------------------------------
+
+_conn: Optional[aiosqlite.Connection] = None
+_lock = asyncio.Lock()
+
+
+async def _get_conn() -> aiosqlite.Connection:
+    """Return the shared database connection, creating it if needed."""
+    global _conn
+    if _conn is None:
+        Path(settings.data_dir).mkdir(parents=True, exist_ok=True)
+        _conn = await aiosqlite.connect(DB_PATH, timeout=60)
+        _conn.row_factory = aiosqlite.Row
+        await _conn.execute("PRAGMA journal_mode=WAL")
+        await _conn.execute("PRAGMA busy_timeout=30000")
+        await _conn.execute("PRAGMA synchronous=NORMAL")
+    return _conn
+
+
+async def _close_conn() -> None:
+    """Close the shared connection (called on shutdown)."""
+    global _conn
+    if _conn is not None:
+        try:
+            await _conn.close()
+        except Exception:
+            pass
+        _conn = None
+
+
 async def init_db() -> None:
     """Create database and tables if they don't exist."""
-    Path(settings.data_dir).mkdir(parents=True, exist_ok=True)
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("PRAGMA journal_mode=WAL")
-        await db.executescript(SCHEMA_SQL)
-        await db.commit()
+    async with _lock:
+        conn = await _get_conn()
+        await conn.executescript(SCHEMA_SQL)
+        await conn.commit()
 
 
 @asynccontextmanager
 async def get_db():
-    """Yield a fresh aiosqlite connection. Always use inside `async with`."""
-    db = await aiosqlite.connect(DB_PATH)
-    db.row_factory = aiosqlite.Row
-    try:
-        yield db
-    finally:
-        await db.close()
+    """Yield the shared connection under the write lock.
+
+    All callers serialise through this, which is fine because SQLite
+    only supports one writer at a time anyway and all our queries are fast.
+    """
+    async with _lock:
+        conn = await _get_conn()
+        try:
+            yield conn
+        except Exception:
+            # Roll back any partial transaction on error
+            try:
+                await conn.rollback()
+            except Exception:
+                pass
+            raise
 
 
 # ---------------------------------------------------------------------------

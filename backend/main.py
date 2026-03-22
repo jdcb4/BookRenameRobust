@@ -78,6 +78,8 @@ async def lifespan(app: FastAPI):
         await task
     except asyncio.CancelledError:
         pass
+    # Close the shared database connection
+    await db._close_conn()
 
 
 app = FastAPI(title="BookTidy", version="0.1.0", lifespan=lifespan)
