@@ -12,7 +12,6 @@ from backend import db
 from backend.config import settings
 from backend.epub_parser import extract_metadata, write_metadata_and_move
 from backend.llm_client import enrich_book
-from backend.open_library import lookup as ol_lookup
 from backend.router import route_book
 from backend.sanitiser import (
     build_filename,
@@ -45,6 +44,24 @@ def _cleanup_empty_dirs(path: str, stop_at: str) -> None:
             break
         current = os.path.dirname(current)
 
+def _cleanup_temp_files(output_dir: str) -> None:
+    """Remove any stale .tmp_ files from the output directory (recursive)."""
+    try:
+        if not os.path.isdir(output_dir):
+            return
+        for root, _dirs, files in os.walk(output_dir):
+            for fname in files:
+                if fname.startswith(".tmp_"):
+                    tmp_path = os.path.join(root, fname)
+                    try:
+                        os.remove(tmp_path)
+                        logger.info(f"Removed stale temp file: {tmp_path}")
+                    except OSError:
+                        pass
+    except OSError:
+        pass
+
+
 # Module-level progress queue — main.py reads from this via WebSocket broadcaster
 progress_queue: asyncio.Queue = asyncio.Queue()
 
@@ -76,18 +93,7 @@ async def scan_input_dir(job_id: int) -> None:
 
     # --- Clean up stale temp files in output dir ---
     output_dir = settings.output_dir
-    try:
-        if os.path.isdir(output_dir):
-            for fname in os.listdir(output_dir):
-                if fname.startswith(".tmp_") and fname.endswith(".epub"):
-                    tmp_path = os.path.join(output_dir, fname)
-                    try:
-                        os.remove(tmp_path)
-                        logger.info(f"Removed stale temp file: {tmp_path}")
-                    except OSError:
-                        pass
-    except OSError:
-        pass
+    _cleanup_temp_files(output_dir)
 
     # --- Step 0a: Walk and classify files ---
     epub_files: list[str] = []
@@ -272,7 +278,7 @@ async def _dedup_by_proposed_filename(job_id: int) -> None:
             # If already committed, skip — don't undo committed books automatically
             if dup["state"] == "committed":
                 continue
-            # Flag as duplicate and move to review
+            # Flag as duplicate and move to skipped (auto-discard the inferior copy)
             existing_flags = []
             try:
                 existing_flags = json.loads(dup.get("flags") or "[]")
@@ -280,19 +286,30 @@ async def _dedup_by_proposed_filename(job_id: int) -> None:
                 pass
             if "post_processing_duplicate" not in existing_flags:
                 existing_flags.append("post_processing_duplicate")
+
+            # Delete the source file of the inferior duplicate
+            try:
+                dup_path = dup.get("file_path")
+                if dup_path and os.path.exists(dup_path):
+                    os.remove(dup_path)
+                    _cleanup_empty_dirs(os.path.dirname(dup_path), settings.input_dir)
+                    logger.info(f"Deleted inferior duplicate: {dup_path}")
+            except OSError as e:
+                logger.warning(f"Could not delete duplicate {dup.get('file_path')}: {e}")
+
             await db.update_book(
                 dup["id"],
-                state="review",
+                state="skipped",
                 flags=json.dumps(existing_flags),
                 confidence_notes=(
                     (dup.get("confidence_notes") or "")
-                    + f" Duplicate of book {keeper['id']} ({keeper['proposed_filename']})."
+                    + f" Post-processing duplicate of book {keeper['id']} ({keeper['proposed_filename']}). Auto-skipped."
                 ).strip(),
             )
             await _notify({
                 "type": "book_update",
                 "book_id": dup["id"],
-                "state": "review",
+                "state": "skipped",
                 "file_name": dup["file_name"],
                 "proposed_filename": dup.get("proposed_filename"),
             })
@@ -357,25 +374,12 @@ async def _process_book(fpath: str, md5_hash: str, job_id: int, sem: asyncio.Sem
         text_sample = ""
     await db.update_book(book_id, text_sample=text_sample[:50000])  # cap storage
 
-    # --- Step 3: Open Library lookup ---
-    try:
-        ol_data = await ol_lookup(
-            isbn=epub_meta.get("orig_isbn"),
-            title=epub_meta.get("orig_title"),
-            author=epub_meta.get("orig_author"),
-        )
-    except Exception:
-        ol_data = None
-
-    if ol_data:
-        await db.update_book(book_id, open_library_data=ol_data.get("raw", ""))
-
-    # --- Step 4: Primary LLM enrichment (uses semaphore for concurrency control) ---
+    # --- Step 3: LLM enrichment (uses semaphore for concurrency control) ---
     book_data = {
         "relative_path": relative_dir,
         "file_name": fname,
         "text_sample": text_sample[:15000],  # cap prompt size
-        "open_library_data": ol_data.get("raw") if ol_data else None,
+        "open_library_data": None,
         **epub_meta,
     }
 

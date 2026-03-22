@@ -8,6 +8,8 @@ let currentTab = 'dashboard';
 let selectedBookId = null;
 let allModels = [];
 let bookCounts = {};
+let sidePanelPinned = false;
+let currentBookList = []; // Track current list for next/prev navigation
 
 // ---------------------------------------------------------------------------
 // Theme
@@ -129,7 +131,7 @@ function handleWSMessage(msg) {
     const stateLabel = {
       'review': 'Needs review', 'auto_accepted': 'Auto-accepted',
       'flagged_quality': 'Quality flagged', 'non_english': 'Non-English',
-      'error': 'Error', 'processing': 'Processing...'
+      'error': 'Error', 'processing': 'Processing...', 'skipped': 'Skipped'
     }[msg.state] || msg.state;
     appendLog(`${msg.file_name}: ${stateLabel}${msg.error ? ' - ' + msg.error : ''}`);
     if (msg.state !== 'processing') {
@@ -318,7 +320,7 @@ function showView(name) {
   document.querySelectorAll('[id^="view-"]').forEach(v => v.style.display = 'none');
   const el = document.getElementById('view-' + name);
   if (el) el.style.display = 'block';
-  closeSidePanel();
+  if (!sidePanelPinned) closeSidePanel();
   refreshCurrentView();
 }
 
@@ -383,6 +385,8 @@ async function loadBooks(stateFilter) {
   try {
     const data = await api('GET', `/api/books?state=${stateFilter}`);
     const books = data.books || [];
+    currentBookList = books; // Store for navigation
+
     const listId = {
       'review': 'review-list',
       'flagged_quality': 'flagged-list',
@@ -390,13 +394,14 @@ async function loadBooks(stateFilter) {
       'auto_accepted,committed': 'auto-list',
     }[stateFilter] || 'review-list';
 
+    const showCheckbox = stateFilter === 'review' || stateFilter === 'flagged_quality' || stateFilter === 'non_english';
     const container = document.getElementById(listId);
     if (books.length === 0) {
       container.innerHTML = '<p style="color:var(--text-muted);padding:20px">No books in this queue.</p>';
       return;
     }
 
-    container.innerHTML = books.map(book => renderBookRow(book, stateFilter === 'review')).join('');
+    container.innerHTML = books.map(book => renderBookRow(book, showCheckbox)).join('');
 
     // Attach click handlers
     container.querySelectorAll('.book-row').forEach(row => {
@@ -416,6 +421,13 @@ function renderBookRow(book, showCheckbox = false) {
   const confText = (conf * 100).toFixed(0) + '%';
   const secondary = book.llm_secondary_used ? '<span class="secondary-badge">2nd LLM</span>' : '';
   const quality = book.quality_ok === 0 ? '<span class="quality-badge">Quality Issue</span>' : '';
+
+  // Parse and render flags
+  const flags = parseJSON(book.flags) || [];
+  const flagsHtml = flags.length > 0
+    ? flags.map(f => `<span class="flag-badge" title="${esc(f)}">${esc(truncate(f, 20))}</span>`).join(' ')
+    : '';
+
   const checkbox = showCheckbox ? `<input type="checkbox" class="book-checkbox" data-id="${book.id}">` : '<span></span>';
   const actions = renderRowActions(book);
 
@@ -427,7 +439,7 @@ function renderBookRow(book, showCheckbox = false) {
     </div>
     <div class="author">${esc(book.proposed_author || book.orig_author || '')}</div>
     <div><span class="confidence-badge ${confClass}">${confText}</span></div>
-    <div>${secondary}${quality}</div>
+    <div class="flags-cell">${secondary}${quality}${flagsHtml ? '<br>' + flagsHtml : ''}</div>
     <div>${actions}</div>
   </div>`;
 }
@@ -446,23 +458,43 @@ function renderRowActions(book) {
 }
 
 async function quickApprove(id) {
-  try { await api('POST', `/api/books/${id}/approve`); toast('Book approved', 'success'); refreshCurrentView(); refreshCounts(); }
-  catch (e) { toast(e.message, 'error'); }
+  try {
+    await api('POST', `/api/books/${id}/approve`);
+    toast('Book approved', 'success');
+    refreshCurrentView();
+    refreshCounts();
+  } catch (e) { toast(e.message, 'error'); }
 }
 
 async function quickSkip(id) {
-  try { await api('POST', `/api/books/${id}/skip`); toast('Book skipped', 'info'); refreshCurrentView(); refreshCounts(); }
-  catch (e) { toast(e.message, 'error'); }
+  try {
+    await api('POST', `/api/books/${id}/skip`);
+    toast('Book skipped', 'info');
+    refreshCurrentView();
+    refreshCounts();
+  } catch (e) { toast(e.message, 'error'); }
 }
 
 async function quickUndo(id) {
-  try { await api('POST', `/api/books/${id}/undo`); toast('Book undone', 'info'); refreshCurrentView(); refreshCounts(); }
-  catch (e) { toast(e.message, 'error'); }
+  try {
+    await api('POST', `/api/books/${id}/undo`);
+    toast('Book undone', 'info');
+    refreshCurrentView();
+    refreshCounts();
+  } catch (e) { toast(e.message, 'error'); }
 }
 
 // ---------------------------------------------------------------------------
 // Book Detail Side Panel
 // ---------------------------------------------------------------------------
+function getNextBookId(currentId) {
+  const idx = currentBookList.findIndex(b => b.id === currentId);
+  if (idx >= 0 && idx < currentBookList.length - 1) {
+    return currentBookList[idx + 1].id;
+  }
+  return null;
+}
+
 async function openBookDetail(bookId) {
   try {
     const book = await api('GET', `/api/books/${bookId}`);
@@ -477,9 +509,31 @@ async function openBookDetail(bookId) {
   }
 }
 
+async function openNextBook(currentId) {
+  const nextId = getNextBookId(currentId);
+  if (nextId) {
+    // Remove the actioned book from the list so navigation stays correct
+    currentBookList = currentBookList.filter(b => b.id !== currentId);
+    await openBookDetail(nextId);
+  } else {
+    closeSidePanel();
+    refreshCurrentView();
+    refreshCounts();
+  }
+}
+
 function closeSidePanel() {
   document.getElementById('side-panel').classList.remove('open');
   selectedBookId = null;
+}
+
+function togglePinPanel() {
+  sidePanelPinned = !sidePanelPinned;
+  const btn = document.getElementById('btn-pin-panel');
+  if (btn) {
+    btn.textContent = sidePanelPinned ? 'Unpin' : 'Pin';
+    btn.classList.toggle('btn-primary', sidePanelPinned);
+  }
 }
 
 function renderBookDetail(book) {
@@ -498,10 +552,16 @@ function renderBookDetail(book) {
     flagsBox = `<div class="warning-box" style="border-color:var(--warning)"><strong>Flags:</strong><ul>${flags.map(f => `<li>${esc(f)}</li>`).join('')}</ul></div>`;
   }
 
+  const pinLabel = sidePanelPinned ? 'Unpin' : 'Pin';
+  const pinClass = sidePanelPinned ? 'btn-primary' : '';
+
   return `
     <div class="side-panel-header">
       <h2>Book Detail</h2>
-      <button class="close-btn" onclick="closeSidePanel()">&times;</button>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="btn btn-sm ${pinClass}" id="btn-pin-panel" onclick="togglePinPanel()" title="Pin panel open">${pinLabel}</button>
+        <button class="close-btn" onclick="closeSidePanel()">&times;</button>
+      </div>
     </div>
     ${qualityBox}
     ${flagsBox}
@@ -539,13 +599,6 @@ function renderBookDetail(book) {
         &#9654; Text Sample
       </div>
       <div class="collapsible-body">${esc(book.text_sample || 'No text sample')}</div>
-    </div>
-
-    <div class="collapsible" id="ol-data-section">
-      <div class="collapsible-header" onclick="toggleCollapsible('ol-data-section')">
-        &#9654; Open Library Data
-      </div>
-      <div class="collapsible-body">${esc(book.open_library_data || 'None')}</div>
     </div>
 
     <div class="collapsible" id="desc-section">
@@ -619,13 +672,28 @@ function attachDetailHandlers(book) {
 
   if (approveBtn) approveBtn.onclick = async () => {
     await saveDetailChanges(book.id);
-    await quickApprove(book.id);
-    closeSidePanel();
+    try {
+      await api('POST', `/api/books/${book.id}/approve`);
+      toast('Book approved', 'success');
+      refreshCounts();
+      await openNextBook(book.id);
+    } catch (e) { toast(e.message, 'error'); }
   };
-  if (skipBtn) skipBtn.onclick = () => { quickSkip(book.id); closeSidePanel(); };
+  if (skipBtn) skipBtn.onclick = async () => {
+    try {
+      await api('POST', `/api/books/${book.id}/skip`);
+      toast('Book skipped', 'info');
+      refreshCounts();
+      await openNextBook(book.id);
+    } catch (e) { toast(e.message, 'error'); }
+  };
   if (rejectBtn) rejectBtn.onclick = () => {
-    if (confirm('Reject this book?')) {
-      api('POST', `/api/books/${book.id}/reject`).then(() => { toast('Rejected', 'info'); refreshCurrentView(); refreshCounts(); closeSidePanel(); });
+    if (confirm('Reject this book? This will delete the source file.')) {
+      api('POST', `/api/books/${book.id}/reject`).then(async () => {
+        toast('Rejected', 'info');
+        refreshCounts();
+        await openNextBook(book.id);
+      });
     }
   };
   if (commitBtn) commitBtn.onclick = async () => {
@@ -879,6 +947,11 @@ function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
+function truncate(str, len) {
+  if (!str) return '';
+  return str.length > len ? str.substring(0, len) + '...' : str;
+}
+
 // ---------------------------------------------------------------------------
 // Event handlers
 // ---------------------------------------------------------------------------
@@ -919,7 +992,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Select all / bulk approve
+  // Select all / bulk approve / bulk skip
   document.getElementById('btn-select-all-review').addEventListener('click', () => {
     document.querySelectorAll('#review-list .book-checkbox').forEach(cb => cb.checked = !cb.checked);
   });
@@ -931,6 +1004,19 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       await api('POST', '/api/books/bulk-approve', ids);
       toast(`${ids.length} books approved`, 'success');
+      refreshCurrentView();
+      refreshCounts();
+    } catch (e) { toast(e.message, 'error'); }
+  });
+
+  document.getElementById('btn-bulk-skip').addEventListener('click', async () => {
+    const ids = [];
+    document.querySelectorAll('#review-list .book-checkbox:checked').forEach(cb => ids.push(parseInt(cb.dataset.id)));
+    if (ids.length === 0) { toast('No books selected', 'info'); return; }
+    if (!confirm(`Skip ${ids.length} selected books? Their source files will be deleted.`)) return;
+    try {
+      await api('POST', '/api/books/bulk-skip', ids);
+      toast(`${ids.length} books skipped`, 'info');
       refreshCurrentView();
       refreshCounts();
     } catch (e) { toast(e.message, 'error'); }

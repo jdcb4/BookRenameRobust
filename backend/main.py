@@ -244,6 +244,23 @@ async def bulk_approve(book_ids: list[int]):
     return {"results": results}
 
 
+@app.post("/api/books/bulk-skip")
+async def bulk_skip(book_ids: list[int]):
+    results = []
+    for bid in book_ids:
+        try:
+            book = await db.get_book(bid)
+            if book and book["state"] in ("review", "flagged_quality", "non_english"):
+                _delete_source_file(book.get("file_path"))
+                await db.update_book(bid, state="skipped")
+                results.append({"book_id": bid, "status": "skipped"})
+            else:
+                results.append({"book_id": bid, "status": "ignored", "reason": "invalid state"})
+        except Exception as e:
+            results.append({"book_id": bid, "status": "error", "reason": str(e)})
+    return {"results": results}
+
+
 @app.post("/api/books/{book_id}/reject")
 async def reject_book(book_id: int):
     book = await db.get_book(book_id)

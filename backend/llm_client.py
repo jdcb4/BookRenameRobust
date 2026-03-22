@@ -43,9 +43,6 @@ ISBN: {orig_isbn}
 Description: {orig_description}
 Subjects: {orig_subjects}
 
-### Open Library Data
-{open_library_data}
-
 ### Extracted Text Sample (first ~3000 words)
 {text_sample}
 
@@ -117,18 +114,6 @@ PINNED_MODELS = [
 
 def _build_prompt(book_data: dict) -> str:
     """Build the LLM prompt from book data."""
-    ol_data = book_data.get("open_library_data")
-    if ol_data and isinstance(ol_data, str):
-        try:
-            ol_parsed = json.loads(ol_data)
-            ol_display = json.dumps(ol_parsed, indent=2)
-        except json.JSONDecodeError:
-            ol_display = ol_data
-    elif ol_data and isinstance(ol_data, dict):
-        ol_display = json.dumps(ol_data, indent=2)
-    else:
-        ol_display = "No Open Library data available."
-
     return PROMPT_TEMPLATE.format(
         folder_path=book_data.get("relative_path", ""),
         file_name=book_data.get("file_name", ""),
@@ -144,7 +129,6 @@ def _build_prompt(book_data: dict) -> str:
         orig_isbn=book_data.get("orig_isbn", "None"),
         orig_description=book_data.get("orig_description", "None"),
         orig_subjects=book_data.get("orig_subjects", "None"),
-        open_library_data=ol_display,
         text_sample=book_data.get("text_sample", "No text sample available."),
         genre_taxonomy=genre_taxonomy_for_prompt(),
     )
@@ -253,19 +237,27 @@ async def _call_openrouter(model: str, prompt: str) -> dict:
         "max_tokens": 2000,
     }
 
-    max_retries = 3
+    max_retries = 5
     backoff = 10.0
+
+    # Rate-limit status codes: 429 (Too Many Requests) and 403 (Forbidden,
+    # which OpenRouter also returns for rate-limiting / quota issues)
+    RATE_LIMIT_CODES = {429, 403}
 
     for attempt in range(max_retries + 1):
         try:
             async with httpx.AsyncClient(timeout=60.0) as client:
                 resp = await client.post(OPENROUTER_URL, json=payload, headers=headers)
 
-                if resp.status_code == 429:
+                if resp.status_code in RATE_LIMIT_CODES:
                     if attempt < max_retries:
-                        logger.warning(f"Rate limited (429), backing off {backoff}s (attempt {attempt + 1})")
-                        await asyncio.sleep(backoff)
-                        backoff *= 2
+                        wait = backoff + (attempt * 5)  # progressive backoff
+                        logger.warning(
+                            f"Rate limited ({resp.status_code}), backing off {wait:.0f}s "
+                            f"(attempt {attempt + 1}/{max_retries})"
+                        )
+                        await asyncio.sleep(wait)
+                        backoff *= 1.5
                         continue
                     resp.raise_for_status()
 
@@ -276,20 +268,26 @@ async def _call_openrouter(model: str, prompt: str) -> dict:
                 return _extract_json(content)
 
         except httpx.HTTPStatusError as e:
-            if e.response.status_code == 429 and attempt < max_retries:
-                logger.warning(f"Rate limited (429), backing off {backoff}s (attempt {attempt + 1})")
-                await asyncio.sleep(backoff)
-                backoff *= 2
+            if e.response.status_code in RATE_LIMIT_CODES and attempt < max_retries:
+                wait = backoff + (attempt * 5)
+                logger.warning(
+                    f"Rate limited ({e.response.status_code}), backing off {wait:.0f}s "
+                    f"(attempt {attempt + 1}/{max_retries})"
+                )
+                await asyncio.sleep(wait)
+                backoff *= 1.5
                 continue
-            if attempt == 0:
-                logger.warning(f"LLM call failed (attempt 1), retrying in 5s: {e}")
-                await asyncio.sleep(5)
+            if attempt < max_retries:
+                wait = 5 + (attempt * 3)
+                logger.warning(f"LLM call failed (attempt {attempt + 1}), retrying in {wait}s: {e}")
+                await asyncio.sleep(wait)
                 continue
             raise
         except Exception as e:
-            if attempt == 0:
-                logger.warning(f"LLM call failed (attempt 1), retrying in 5s: {e}")
-                await asyncio.sleep(5)
+            if attempt < max_retries:
+                wait = 5 + (attempt * 3)
+                logger.warning(f"LLM call failed (attempt {attempt + 1}), retrying in {wait}s: {e}")
+                await asyncio.sleep(wait)
                 continue
             raise
 
