@@ -3,7 +3,7 @@ version: "3.8"
 services:
   booktidy:
     build: .
-    image: jdcb4/BookRenameRobust:latest
+    image: jdcb4/bookrenamerobust:latest
     container_name: booktidy
     ports:
       - "${PORT:-8080}:8080"
