@@ -1,0 +1,24 @@
+version: "3.8"
+
+services:
+  booktidy:
+    build: .
+    image: jdcb4/BookRenameRobust:latest
+    container_name: booktidy
+    ports:
+      - "${PORT:-8080}:8080"
+    volumes:
+      - ${INPUT_DIR:-./input}:/input
+      - ${OUTPUT_DIR:-./output}:/output
+      - ./data:/data
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENROUTER_MODEL_PRIMARY=${OPENROUTER_MODEL_PRIMARY:-google/gemini-flash-1.5}
+      - OPENROUTER_MODEL_SECONDARY=${OPENROUTER_MODEL_SECONDARY:-anthropic/claude-sonnet-4-5}
+      - LLM_CONCURRENCY=${LLM_CONCURRENCY:-5}
+      - AUTO_ACCEPT_THRESHOLD=${AUTO_ACCEPT_THRESHOLD:-0.95}
+      - INPUT_DIR=/input
+      - OUTPUT_DIR=/output
+      - DATA_DIR=/data
+      - PORT=8080
+    restart: unless-stopped

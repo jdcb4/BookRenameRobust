@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BookTidy</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="header">
+    <h1>BookTidy</h1>
+    <div class="header-actions">
+      <span id="ws-status" style="font-size:12px;color:var(--text-muted)">Connecting...</span>
+      <button class="theme-toggle" id="theme-toggle" title="Toggle dark/light mode">Dark</button>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs">
+    <div class="tab active" data-tab="dashboard">Dashboard</div>
+    <div class="tab" data-tab="review">Review Queue <span class="badge" id="badge-review">0</span></div>
+    <div class="tab" data-tab="flagged">Flagged Quality <span class="badge" id="badge-flagged">0</span></div>
+    <div class="tab" data-tab="non-english">Non-English <span class="badge" id="badge-non-english">0</span></div>
+    <div class="tab" data-tab="duplicates">Duplicates <span class="badge" id="badge-duplicates">0</span></div>
+    <div class="tab" data-tab="auto-processed">Auto-Processed <span class="badge" id="badge-auto">0</span></div>
+    <div class="tab" data-tab="non-epub">Non-EPUB Files <span class="badge" id="badge-non-epub">0</span></div>
+    <div class="tab" data-tab="settings">Settings</div>
+  </nav>
+
+  <div class="main">
+    <div class="content" id="content">
+      <!-- Dashboard (default) -->
+      <div id="view-dashboard">
+        <div class="stats-grid" id="stats-grid"></div>
+        <div class="btn-group" style="margin-bottom:16px">
+          <button class="btn btn-primary" id="btn-scan">Scan Input Folder</button>
+          <button class="btn" id="btn-commit-all">Commit All Approved</button>
+        </div>
+        <div class="progress-container" id="progress-container">
+          <div class="progress-bar-outer">
+            <div class="progress-bar-inner" id="progress-bar" style="width:0%">0%</div>
+          </div>
+          <div class="progress-text" id="progress-text">Ready</div>
+        </div>
+        <div class="log-panel" id="log-panel" style="display:none"></div>
+      </div>
+
+      <!-- Review Queue -->
+      <div id="view-review" style="display:none">
+        <div class="btn-group" style="margin-bottom:16px">
+          <button class="btn btn-primary btn-sm" id="btn-select-all-review">Select All</button>
+          <button class="btn btn-success btn-sm" id="btn-bulk-approve">Approve Selected</button>
+        </div>
+        <div class="book-list" id="review-list"></div>
+      </div>
+
+      <!-- Flagged Quality -->
+      <div id="view-flagged" style="display:none">
+        <div class="book-list" id="flagged-list"></div>
+      </div>
+
+      <!-- Non-English -->
+      <div id="view-non-english" style="display:none">
+        <div class="book-list" id="non-english-list"></div>
+      </div>
+
+      <!-- Duplicates -->
+      <div id="view-duplicates" style="display:none">
+        <div class="btn-group" style="margin-bottom:16px">
+          <button class="btn btn-danger" id="btn-delete-duplicates">Delete Duplicates</button>
+        </div>
+        <div class="book-list" id="duplicates-list"></div>
+      </div>
+
+      <!-- Auto-Processed -->
+      <div id="view-auto-processed" style="display:none">
+        <div class="book-list" id="auto-list"></div>
+      </div>
+
+      <!-- Non-EPUB Files -->
+      <div id="view-non-epub" style="display:none">
+        <div class="btn-group" style="margin-bottom:16px">
+          <button class="btn btn-danger" id="btn-delete-non-epub">Delete Non-EPUB Files</button>
+        </div>
+        <ul class="file-list" id="non-epub-list"></ul>
+      </div>
+
+      <!-- Settings -->
+      <div id="view-settings" style="display:none">
+        <div class="settings-form">
+          <h2 style="margin-bottom:16px">Settings</h2>
+          <div class="form-group">
+            <label>OpenRouter API Key</label>
+            <input type="password" id="set-api-key" placeholder="sk-or-v1-...">
+          </div>
+          <div class="form-group">
+            <label>Primary Model</label>
+            <div class="model-selector" id="primary-model-selector">
+              <input type="text" class="model-search" id="set-primary-model" placeholder="Search models...">
+              <div class="model-dropdown" id="primary-model-dropdown"></div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Secondary Model</label>
+            <div class="model-selector" id="secondary-model-selector">
+              <input type="text" class="model-search" id="set-secondary-model" placeholder="Search models...">
+              <div class="model-dropdown" id="secondary-model-dropdown"></div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>LLM Concurrency: <span class="range-value" id="concurrency-value">5</span></label>
+            <input type="range" id="set-concurrency" min="1" max="10" value="5">
+          </div>
+          <div class="form-group">
+            <label>Auto-Accept Threshold: <span class="range-value" id="threshold-value">0.95</span></label>
+            <input type="range" id="set-threshold" min="85" max="100" value="95">
+          </div>
+          <div class="form-group">
+            <label>Input Folder</label>
+            <input type="text" id="set-input-dir" placeholder="/input">
+          </div>
+          <div class="form-group">
+            <label>Output Folder</label>
+            <input type="text" id="set-output-dir" placeholder="/output">
+          </div>
+          <div class="btn-group" style="margin-top:16px">
+            <button class="btn btn-primary" id="btn-save-settings">Save Settings</button>
+            <button class="btn" id="btn-test-llm">Test LLM Connection</button>
+            <button class="btn" id="btn-refresh-models">Refresh Model List</button>
+          </div>
+          <div id="llm-test-result" style="margin-top:12px;font-size:13px"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Side panel for book detail -->
+    <div class="side-panel" id="side-panel">
+      <div class="side-panel-content" id="side-panel-content"></div>
+    </div>
+  </div>
+
+  <!-- Modals -->
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal" id="modal-content"></div>
+  </div>
+
+  <!-- Toast container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
