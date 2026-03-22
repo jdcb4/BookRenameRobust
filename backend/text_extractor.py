@@ -29,7 +29,11 @@ def extract_text_sample(epub_path: str) -> str:
             content = item.get_content()
             if not content:
                 continue
-            soup = BeautifulSoup(content, "lxml")
+            # Try XML first (for XHTML), fall back to lxml HTML parser
+            try:
+                soup = BeautifulSoup(content, "xml")
+            except Exception:
+                soup = BeautifulSoup(content, "lxml")
 
             # Remove script and style elements
             for tag in soup(["script", "style", "head"]):

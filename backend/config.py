@@ -16,8 +16,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     openrouter_api_key: str = ""
-    openrouter_model_primary: str = "google/gemini-flash-1.5"
-    openrouter_model_secondary: str = "anthropic/claude-sonnet-4-5"
+    openrouter_model_primary: str = "google/gemini-3-flash-preview"
+    openrouter_model_secondary: str = "anthropic/claude-sonnet-4.6"
     llm_concurrency: int = 5
     auto_accept_threshold: float = 0.95
     port: int = 8080

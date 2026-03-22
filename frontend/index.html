@@ -31,16 +31,26 @@
       <!-- Dashboard (default) -->
       <div id="view-dashboard">
         <div class="stats-grid" id="stats-grid"></div>
+
+        <!-- Action buttons -->
         <div class="btn-group" style="margin-bottom:16px">
           <button class="btn btn-primary" id="btn-scan">Scan Input Folder</button>
-          <button class="btn" id="btn-commit-all">Commit All Approved</button>
+          <button class="btn btn-success" id="btn-commit-all" style="display:none">Commit All Approved</button>
         </div>
+
+        <!-- Progress panel — hidden until scan starts -->
         <div class="progress-container" id="progress-container">
+          <div class="progress-phase" id="progress-phase">Ready</div>
           <div class="progress-bar-outer">
-            <div class="progress-bar-inner" id="progress-bar" style="width:0%">0%</div>
+            <div class="progress-bar-inner" id="progress-bar" style="width:0%"></div>
           </div>
-          <div class="progress-text" id="progress-text">Ready</div>
+          <div class="progress-detail" id="progress-detail"></div>
         </div>
+
+        <!-- Call-to-action banner — shown after scan completes -->
+        <div class="cta-banner" id="cta-banner" style="display:none"></div>
+
+        <!-- Log output -->
         <div class="log-panel" id="log-panel" style="display:none"></div>
       </div>
 

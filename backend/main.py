@@ -22,7 +22,14 @@ from backend.llm_client import (
     fetch_models,
     test_connection,
 )
-from backend.scanner import commit_all_approved, commit_book, progress_queue, scan_input_dir, undo_book
+from backend.scanner import (
+    _cleanup_empty_dirs,
+    commit_all_approved,
+    commit_book,
+    progress_queue,
+    scan_input_dir,
+    undo_book,
+)
 
 logger = logging.getLogger("booktidy")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -80,6 +87,19 @@ app.add_middleware(
 )
 
 # Determine frontend directory relative to this file
+def _delete_source_file(file_path: str | None) -> None:
+    """Delete a source file from the input dir and clean up empty parent dirs."""
+    if not file_path:
+        return
+    try:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            _cleanup_empty_dirs(os.path.dirname(file_path), settings.input_dir)
+            logger.info(f"Deleted source file: {file_path}")
+    except OSError as e:
+        logger.warning(f"Could not delete source file {file_path}: {e}")
+
+
 FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend")
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 
@@ -222,6 +242,8 @@ async def reject_book(book_id: int):
     book = await db.get_book(book_id)
     if not book:
         raise HTTPException(404, "Book not found")
+    # Delete source file from input
+    _delete_source_file(book.get("file_path"))
     await db.update_book(book_id, state="rejected")
     return {"status": "rejected"}
 
@@ -231,6 +253,8 @@ async def skip_book(book_id: int):
     book = await db.get_book(book_id)
     if not book:
         raise HTTPException(404, "Book not found")
+    # Delete source file from input
+    _delete_source_file(book.get("file_path"))
     await db.update_book(book_id, state="skipped")
     return {"status": "skipped"}
 

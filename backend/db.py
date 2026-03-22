@@ -306,6 +306,8 @@ async def get_non_epub_files() -> list[dict]:
 
 async def delete_all_non_epub() -> list[str]:
     """Delete all non-epub files from disk and DB. Returns list of deleted paths."""
+    from backend.scanner import _cleanup_empty_dirs
+
     files = await get_non_epub_files()
     deleted = []
     for f in files:
@@ -314,6 +316,7 @@ async def delete_all_non_epub() -> list[str]:
             if os.path.exists(path):
                 os.remove(path)
                 deleted.append(path)
+                _cleanup_empty_dirs(os.path.dirname(path), settings.input_dir)
         except OSError:
             pass
     async with get_db() as db:
@@ -344,6 +347,8 @@ async def get_duplicates() -> list[dict]:
 
 async def delete_duplicate_files() -> list[str]:
     """Delete pending duplicate files from disk and mark as deleted in DB."""
+    from backend.scanner import _cleanup_empty_dirs
+
     dupes = await get_duplicates()
     deleted = []
     for d in dupes:
@@ -352,6 +357,7 @@ async def delete_duplicate_files() -> list[str]:
             if os.path.exists(path):
                 os.remove(path)
                 deleted.append(path)
+                _cleanup_empty_dirs(os.path.dirname(path), settings.input_dir)
         except OSError:
             pass
     async with get_db() as db:

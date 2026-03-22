@@ -13,8 +13,8 @@ services:
       - ./data:/data
     environment:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
-      - OPENROUTER_MODEL_PRIMARY=${OPENROUTER_MODEL_PRIMARY:-google/gemini-flash-1.5}
-      - OPENROUTER_MODEL_SECONDARY=${OPENROUTER_MODEL_SECONDARY:-anthropic/claude-sonnet-4-5}
+      - OPENROUTER_MODEL_PRIMARY=${OPENROUTER_MODEL_PRIMARY:-google/gemini-3-flash-preview}
+      - OPENROUTER_MODEL_SECONDARY=${OPENROUTER_MODEL_SECONDARY:-anthropic/claude-sonnet-4.6}
       - LLM_CONCURRENCY=${LLM_CONCURRENCY:-5}
       - AUTO_ACCEPT_THRESHOLD=${AUTO_ACCEPT_THRESHOLD:-0.95}
       - INPUT_DIR=/input

@@ -64,38 +64,144 @@ function connectWS() {
   ws.onerror = () => ws.close();
 }
 
+let scanState = { phase: 'idle', total: 0, done: 0, errors: 0, epubCount: 0, dupeCount: 0, nonEpubCount: 0 };
+
 function handleWSMessage(msg) {
-  if (msg.type === 'progress') {
-    updateProgress(msg.done, msg.total, msg.errors);
-  } else if (msg.type === 'scan_started') {
+  if (msg.type === 'scan_started') {
+    scanState = { phase: 'scanning', total: 0, done: 0, errors: 0, epubCount: 0, dupeCount: 0, nonEpubCount: 0 };
     showProgress();
+    setPhase('Scanning input folder...', false);
     appendLog(`Scan started (Job #${msg.job_id})`);
+    document.getElementById('btn-scan').disabled = true;
+    document.getElementById('btn-scan').textContent = 'Scanning...';
   } else if (msg.type === 'scan_classified') {
+    scanState.epubCount = msg.epub_count;
+    scanState.dupeCount = msg.duplicate_count;
+    scanState.nonEpubCount = msg.non_epub_count;
+    scanState.total = msg.epub_count;
+    scanState.phase = 'processing';
+    setPhase(`Processing ${msg.epub_count} books with LLM...`, false);
+    setDetail(`0 of ${msg.epub_count} complete`, '');
     appendLog(`Found ${msg.epub_count} EPUBs, ${msg.non_epub_count} non-EPUB files, ${msg.duplicate_count} duplicates`);
-  } else if (msg.type === 'scan_completed') {
-    appendLog('Scan completed!');
-    refreshCurrentView();
     refreshCounts();
+  } else if (msg.type === 'progress') {
+    scanState.done = msg.done;
+    scanState.errors = msg.errors;
+    const pct = scanState.total > 0 ? Math.round((msg.done / scanState.total) * 100) : 0;
+    setBar(pct, false);
+    const errorText = msg.errors > 0 ? ` (${msg.errors} errors)` : '';
+    setPhase(`Processing books... ${pct}%`, false);
+    setDetail(`${msg.done} of ${scanState.total} complete${errorText}`, `${scanState.total - msg.done} remaining`);
+    refreshCounts();
+  } else if (msg.type === 'scan_completed') {
+    scanState.phase = 'done';
+    setPhase('Scan complete!', true);
+    setBar(100, true);
+    setDetail(`${scanState.done} books processed`, scanState.errors > 0 ? `${scanState.errors} errors` : 'No errors');
+    appendLog('Scan completed!');
+    document.getElementById('btn-scan').disabled = false;
+    document.getElementById('btn-scan').textContent = 'Scan Input Folder';
+    refreshCounts();
+    refreshCurrentView();
+    showCTABanner();
   } else if (msg.type === 'book_update') {
-    appendLog(`${msg.file_name}: ${msg.state}${msg.error ? ' - ' + msg.error : ''}`);
+    const stateLabel = {
+      'review': 'Needs review', 'auto_accepted': 'Auto-accepted',
+      'flagged_quality': 'Quality flagged', 'non_english': 'Non-English',
+      'error': 'Error', 'processing': 'Processing...'
+    }[msg.state] || msg.state;
+    appendLog(`${msg.file_name}: ${stateLabel}${msg.error ? ' - ' + msg.error : ''}`);
     if (msg.state !== 'processing') {
       refreshCounts();
     }
   }
 }
 
-function updateProgress(done, total, errors) {
-  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+function setPhase(text, done) {
+  const el = document.getElementById('progress-phase');
+  el.className = 'progress-phase' + (done ? ' done' : '');
+  el.innerHTML = (done ? '&#10003; ' : '<span class="spinner"></span> ') + esc(text);
+}
+
+function setBar(pct, complete) {
   const bar = document.getElementById('progress-bar');
   bar.style.width = pct + '%';
-  bar.textContent = pct + '%';
-  document.getElementById('progress-text').textContent =
-    `${done} of ${total} processed${errors > 0 ? ` (${errors} errors)` : ''}`;
+  bar.className = 'progress-bar-inner' + (complete ? ' complete' : '');
+}
+
+function setDetail(left, right) {
+  document.getElementById('progress-detail').innerHTML =
+    `<span>${esc(left)}</span><span>${esc(right)}</span>`;
 }
 
 function showProgress() {
   document.getElementById('progress-container').classList.add('visible');
   document.getElementById('log-panel').style.display = 'block';
+  document.getElementById('cta-banner').style.display = 'none';
+}
+
+function showCTABanner() {
+  const banner = document.getElementById('cta-banner');
+  const reviewCount = (bookCounts.review || 0) + (bookCounts.approved || 0);
+  const flaggedCount = bookCounts.flagged_quality || 0;
+  const nonEngCount = bookCounts.non_english || 0;
+  const autoCount = (bookCounts.auto_accepted || 0) + (bookCounts.committed || 0);
+  const errorCount = bookCounts.error || 0;
+
+  // Only show if there's something to act on
+  if (reviewCount + flaggedCount + nonEngCount + autoCount + errorCount === 0) {
+    banner.style.display = 'none';
+    return;
+  }
+
+  let items = [];
+  if (reviewCount > 0) {
+    items.push(`<div class="cta-item" onclick="switchTab('review')">
+      <span class="cta-count review">${reviewCount}</span>
+      <span>books need your review — click to open the Review Queue</span>
+    </div>`);
+  }
+  if (flaggedCount > 0) {
+    items.push(`<div class="cta-item" onclick="switchTab('flagged')">
+      <span class="cta-count flagged">${flaggedCount}</span>
+      <span>books have quality issues — review in Flagged Quality</span>
+    </div>`);
+  }
+  if (nonEngCount > 0) {
+    items.push(`<div class="cta-item" onclick="switchTab('non-english')">
+      <span class="cta-count non-english">${nonEngCount}</span>
+      <span>non-English books detected — review or skip</span>
+    </div>`);
+  }
+  if (autoCount > 0) {
+    items.push(`<div class="cta-item" onclick="switchTab('auto-processed')">
+      <span class="cta-count auto">${autoCount}</span>
+      <span>books auto-accepted with high confidence</span>
+    </div>`);
+  }
+  if (errorCount > 0) {
+    items.push(`<div class="cta-item" onclick="appendLog('Check errors in the log below')">
+      <span class="cta-count error">${errorCount}</span>
+      <span>books had errors during processing</span>
+    </div>`);
+  }
+
+  banner.innerHTML = `<h3>Next Steps</h3><div class="cta-items">${items.join('')}</div>`;
+  banner.style.display = 'block';
+
+  // Show commit button if there are approved books
+  const commitBtn = document.getElementById('btn-commit-all');
+  if ((bookCounts.approved || 0) + (bookCounts.auto_accepted || 0) > 0) {
+    commitBtn.style.display = 'inline-flex';
+  }
+}
+
+function switchTab(tabName) {
+  document.querySelectorAll('.tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.tab === tabName);
+  });
+  currentTab = tabName;
+  showView(tabName);
 }
 
 function appendLog(text) {
@@ -593,8 +699,8 @@ async function saveSettings() {
 // Model selector
 // ---------------------------------------------------------------------------
 const PINNED_MODELS = [
-  { id: 'google/gemini-flash-1.5', name: 'Gemini Flash 1.5 (pinned default)' },
-  { id: 'anthropic/claude-sonnet-4-5', name: 'Claude Sonnet 4.5 (pinned default)' },
+  { id: 'google/gemini-3-flash-preview', name: 'Google - Gemini 3 Flash Preview (pinned default)' },
+  { id: 'anthropic/claude-sonnet-4.6', name: 'Anthropic - Claude Sonnet 4.6 (pinned default)' },
 ];
 
 function initModelSelector(inputId, dropdownId) {
@@ -633,8 +739,8 @@ function renderModelDropdown(dropdown, query, inputId) {
   }
   if (othersFiltered.length) {
     html += '<div class="model-group-label">All Models</div>';
-    html += othersFiltered.slice(0, 40).map(m =>
-      `<div class="model-option" data-id="${m.id}" data-input="${inputId}">${m.name || m.id} <span class="context-len">${m.context_length ? m.context_length.toLocaleString() + ' ctx' : ''}</span></div>`
+    html += othersFiltered.map(m =>
+      `<div class="model-option" data-id="${m.id}" data-input="${inputId}">${m.name || m.id}</div>`
     ).join('');
   }
   if (!html) html = '<div style="padding:8px;color:var(--text-muted);font-size:13px">No models found</div>';

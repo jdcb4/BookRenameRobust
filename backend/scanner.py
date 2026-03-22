@@ -25,6 +25,26 @@ from backend.text_extractor import extract_text_sample
 
 logger = logging.getLogger("booktidy.scanner")
 
+
+def _cleanup_empty_dirs(path: str, stop_at: str) -> None:
+    """Walk up from *path* removing empty directories until reaching *stop_at*.
+
+    *path* should be the parent directory of the file that was just deleted.
+    *stop_at* is the boundary directory (e.g. INPUT_DIR) that must NOT be removed.
+    """
+    stop_at = os.path.normpath(os.path.abspath(stop_at))
+    current = os.path.normpath(os.path.abspath(path))
+    while current != stop_at and current.startswith(stop_at + os.sep):
+        try:
+            if os.path.isdir(current) and not os.listdir(current):
+                os.rmdir(current)
+                logger.debug(f"Removed empty directory: {current}")
+            else:
+                break  # non-empty or doesn't exist — stop
+        except OSError:
+            break
+        current = os.path.dirname(current)
+
 # Module-level progress queue — main.py reads from this via WebSocket broadcaster
 progress_queue: asyncio.Queue = asyncio.Queue()
 
@@ -53,6 +73,21 @@ async def scan_input_dir(job_id: int) -> None:
     input_dir = settings.input_dir
 
     await _notify({"type": "scan_started", "job_id": job_id})
+
+    # --- Clean up stale temp files in output dir ---
+    output_dir = settings.output_dir
+    try:
+        if os.path.isdir(output_dir):
+            for fname in os.listdir(output_dir):
+                if fname.startswith(".tmp_") and fname.endswith(".epub"):
+                    tmp_path = os.path.join(output_dir, fname)
+                    try:
+                        os.remove(tmp_path)
+                        logger.info(f"Removed stale temp file: {tmp_path}")
+                    except OSError:
+                        pass
+    except OSError:
+        pass
 
     # --- Step 0a: Walk and classify files ---
     epub_files: list[str] = []
@@ -178,8 +213,87 @@ async def scan_input_dir(job_id: int) -> None:
     tasks = [process_one(fpath, md5) for fpath, md5 in unique_epub_files]
     await asyncio.gather(*tasks)
 
+    # --- Post-processing dedup: detect books with same proposed_filename ---
+    await _dedup_by_proposed_filename(job_id)
+
+    # --- Auto-commit books that survived dedup ---
+    auto_books = await db.get_books(state="auto_accepted")
+    for ab in auto_books:
+        try:
+            await commit_book(ab["id"])
+        except Exception as e:
+            logger.error(f"Auto-commit failed for book {ab['id']}: {e}")
+            await db.update_book(ab["id"], error_message=str(e)[:500])
+
     await db.update_job(job_id, status="completed", completed_at="datetime('now')")
     await _notify({"type": "scan_completed", "job_id": job_id})
+
+
+async def _dedup_by_proposed_filename(job_id: int) -> None:
+    """After processing, detect books that resolved to the same proposed filename.
+
+    Among duplicates, keep the one with the highest overall_confidence (or the
+    first by id as tiebreaker).  The others are moved to 'review' with a flag
+    so the user can decide.
+    """
+    # Fetch all non-terminal books from this scan
+    active_states = ("review", "flagged_quality", "non_english", "auto_accepted", "approved", "committed")
+    all_books = await db.get_books()
+    # Filter to books in active states with a proposed_filename
+    candidates = [
+        b for b in all_books
+        if b.get("proposed_filename") and b.get("state") in active_states
+    ]
+
+    # Group by proposed_filename (case-insensitive)
+    groups: dict[str, list[dict]] = {}
+    for b in candidates:
+        key = b["proposed_filename"].lower()
+        groups.setdefault(key, []).append(b)
+
+    for key, group in groups.items():
+        if len(group) <= 1:
+            continue
+
+        # Sort: highest overall_confidence first, then lowest id as tiebreaker
+        group.sort(key=lambda b: (-(b.get("overall_confidence") or 0), b["id"]))
+        keeper = group[0]
+        dupes = group[1:]
+
+        logger.info(
+            f"Post-processing dedup: keeping book {keeper['id']} "
+            f"({keeper['file_name']}), marking {len(dupes)} duplicate(s) "
+            f"for proposed filename '{keeper['proposed_filename']}'"
+        )
+
+        for dup in dupes:
+            # If already committed, skip — don't undo committed books automatically
+            if dup["state"] == "committed":
+                continue
+            # Flag as duplicate and move to review
+            existing_flags = []
+            try:
+                existing_flags = json.loads(dup.get("flags") or "[]")
+            except (json.JSONDecodeError, TypeError):
+                pass
+            if "post_processing_duplicate" not in existing_flags:
+                existing_flags.append("post_processing_duplicate")
+            await db.update_book(
+                dup["id"],
+                state="review",
+                flags=json.dumps(existing_flags),
+                confidence_notes=(
+                    (dup.get("confidence_notes") or "")
+                    + f" Duplicate of book {keeper['id']} ({keeper['proposed_filename']})."
+                ).strip(),
+            )
+            await _notify({
+                "type": "book_update",
+                "book_id": dup["id"],
+                "state": "review",
+                "file_name": dup["file_name"],
+                "proposed_filename": dup.get("proposed_filename"),
+            })
 
 
 async def _process_book(fpath: str, md5_hash: str, job_id: int, sem: asyncio.Semaphore) -> None:
@@ -407,13 +521,8 @@ async def _process_book(fpath: str, md5_hash: str, job_id: int, sem: asyncio.Sem
 
     await db.update_book(book_id, **update_data)
 
-    # If auto-accepted, commit immediately
-    if state == "auto_accepted":
-        try:
-            await commit_book(book_id)
-        except Exception as e:
-            logger.error(f"Auto-commit failed for book {book_id}: {e}")
-            await db.update_book(book_id, state="auto_accepted", error_message=str(e)[:500])
+    # Note: auto-accepted books are committed after post-processing dedup,
+    # not here, to avoid creating duplicate output files.
 
     await _notify({
         "type": "book_update",
@@ -507,6 +616,7 @@ async def commit_book(book_id: int) -> str:
     try:
         if os.path.exists(source_path):
             os.remove(source_path)
+            _cleanup_empty_dirs(os.path.dirname(source_path), settings.input_dir)
     except OSError as e:
         logger.warning(f"Could not remove original {source_path}: {e}")
 

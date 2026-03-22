@@ -185,18 +185,47 @@ body {
 
 .btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
 
-/* Progress bar */
+/* Progress panel */
 .progress-container {
   margin-bottom: 24px;
   display: none;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: var(--shadow);
 }
 
 .progress-container.visible { display: block; }
 
+.progress-phase {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.progress-phase .spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.progress-phase.done { color: var(--success); }
+.progress-phase.done .spinner { display: none; }
+
 .progress-bar-outer {
   background: var(--bg-hover);
   border-radius: 6px;
-  height: 24px;
+  height: 20px;
   overflow: hidden;
   margin-bottom: 8px;
 }
@@ -206,19 +235,74 @@ body {
   background: var(--primary);
   border-radius: 6px;
   transition: width 0.3s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  min-width: 40px;
+  min-width: 0;
 }
 
-.progress-text {
+.progress-bar-inner.complete { background: var(--success); }
+
+.progress-detail {
   font-size: 13px;
   color: var(--text-muted);
+  display: flex;
+  justify-content: space-between;
 }
+
+/* CTA banner — shown after scan with next steps */
+.cta-banner {
+  background: var(--bg-card);
+  border: 2px solid var(--primary);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow);
+}
+
+.cta-banner h3 {
+  font-size: 15px;
+  margin-bottom: 8px;
+}
+
+.cta-banner .cta-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cta-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+  font-size: 14px;
+}
+
+.cta-item:hover { background: var(--bg-hover); }
+
+.cta-item .cta-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  border-radius: 14px;
+  font-weight: 700;
+  font-size: 13px;
+  color: #fff;
+}
+
+.cta-item .cta-count.review { background: var(--primary); }
+.cta-item .cta-count.flagged { background: var(--danger); }
+.cta-item .cta-count.non-english { background: var(--warning); }
+.cta-item .cta-count.auto { background: var(--success); }
+.cta-item .cta-count.error { background: var(--text-muted); }
+.cta-item .cta-count.duplicates { background: #6f42c1; }
+
+/* Stat card clickable */
+.stat-card.clickable { cursor: pointer; transition: border-color 0.15s; }
+.stat-card.clickable:hover { border-color: var(--primary); }
 
 /* Book cards / rows */
 .book-list {

@@ -104,50 +104,14 @@ Important:
 """
 
 # ---------------------------------------------------------------------------
-# Top 40 OpenRouter models (hardcoded fallback list)
+# Pinned models (always at top of selector) and empty fallback
 # ---------------------------------------------------------------------------
 
-FALLBACK_MODEL_LIST = [
-    {"id": "google/gemini-flash-1.5", "name": "Gemini Flash 1.5", "provider": "Google", "context_length": 1000000},
-    {"id": "anthropic/claude-sonnet-4-5", "name": "Claude Sonnet 4.5", "provider": "Anthropic", "context_length": 200000},
-    {"id": "anthropic/claude-haiku-3-5", "name": "Claude Haiku 3.5", "provider": "Anthropic", "context_length": 200000},
-    {"id": "anthropic/claude-opus-4", "name": "Claude Opus 4", "provider": "Anthropic", "context_length": 200000},
-    {"id": "openai/gpt-4o", "name": "GPT-4o", "provider": "OpenAI", "context_length": 128000},
-    {"id": "openai/gpt-4o-mini", "name": "GPT-4o Mini", "provider": "OpenAI", "context_length": 128000},
-    {"id": "openai/gpt-4-turbo", "name": "GPT-4 Turbo", "provider": "OpenAI", "context_length": 128000},
-    {"id": "openai/o1", "name": "o1", "provider": "OpenAI", "context_length": 200000},
-    {"id": "openai/o1-mini", "name": "o1 Mini", "provider": "OpenAI", "context_length": 128000},
-    {"id": "openai/o3-mini", "name": "o3 Mini", "provider": "OpenAI", "context_length": 200000},
-    {"id": "google/gemini-pro-1.5", "name": "Gemini Pro 1.5", "provider": "Google", "context_length": 2000000},
-    {"id": "google/gemini-2.0-flash-001", "name": "Gemini 2.0 Flash", "provider": "Google", "context_length": 1048576},
-    {"id": "google/gemini-2.5-pro-preview", "name": "Gemini 2.5 Pro", "provider": "Google", "context_length": 1048576},
-    {"id": "meta-llama/llama-3.1-405b-instruct", "name": "Llama 3.1 405B", "provider": "Meta", "context_length": 131072},
-    {"id": "meta-llama/llama-3.1-70b-instruct", "name": "Llama 3.1 70B", "provider": "Meta", "context_length": 131072},
-    {"id": "meta-llama/llama-3.1-8b-instruct", "name": "Llama 3.1 8B", "provider": "Meta", "context_length": 131072},
-    {"id": "meta-llama/llama-3.3-70b-instruct", "name": "Llama 3.3 70B", "provider": "Meta", "context_length": 131072},
-    {"id": "mistralai/mistral-large", "name": "Mistral Large", "provider": "Mistral", "context_length": 128000},
-    {"id": "mistralai/mistral-small", "name": "Mistral Small", "provider": "Mistral", "context_length": 32000},
-    {"id": "mistralai/mixtral-8x7b-instruct", "name": "Mixtral 8x7B", "provider": "Mistral", "context_length": 32768},
-    {"id": "deepseek/deepseek-chat", "name": "DeepSeek Chat", "provider": "DeepSeek", "context_length": 64000},
-    {"id": "deepseek/deepseek-r1", "name": "DeepSeek R1", "provider": "DeepSeek", "context_length": 64000},
-    {"id": "qwen/qwen-2.5-72b-instruct", "name": "Qwen 2.5 72B", "provider": "Qwen", "context_length": 131072},
-    {"id": "qwen/qwen-2.5-7b-instruct", "name": "Qwen 2.5 7B", "provider": "Qwen", "context_length": 131072},
-    {"id": "cohere/command-r-plus", "name": "Command R+", "provider": "Cohere", "context_length": 128000},
-    {"id": "cohere/command-r", "name": "Command R", "provider": "Cohere", "context_length": 128000},
-    {"id": "databricks/dbrx-instruct", "name": "DBRX Instruct", "provider": "Databricks", "context_length": 32768},
-    {"id": "microsoft/phi-3-medium-128k-instruct", "name": "Phi-3 Medium 128K", "provider": "Microsoft", "context_length": 128000},
-    {"id": "microsoft/phi-3-mini-128k-instruct", "name": "Phi-3 Mini 128K", "provider": "Microsoft", "context_length": 128000},
-    {"id": "nvidia/llama-3.1-nemotron-70b-instruct", "name": "Nemotron 70B", "provider": "NVIDIA", "context_length": 131072},
-    {"id": "perplexity/llama-3.1-sonar-large-128k-online", "name": "Sonar Large 128K", "provider": "Perplexity", "context_length": 127072},
-    {"id": "amazon/nova-pro-v1", "name": "Nova Pro", "provider": "Amazon", "context_length": 300000},
-    {"id": "amazon/nova-lite-v1", "name": "Nova Lite", "provider": "Amazon", "context_length": 300000},
-    {"id": "x-ai/grok-2", "name": "Grok 2", "provider": "xAI", "context_length": 131072},
-    {"id": "x-ai/grok-2-mini", "name": "Grok 2 Mini", "provider": "xAI", "context_length": 131072},
-]
+FALLBACK_MODEL_LIST: list[dict] = []
 
 PINNED_MODELS = [
-    {"id": "google/gemini-flash-1.5", "name": "Gemini Flash 1.5 (pinned default)", "provider": "Google", "context_length": 1000000},
-    {"id": "anthropic/claude-sonnet-4-5", "name": "Claude Sonnet 4.5 (pinned default)", "provider": "Anthropic", "context_length": 200000},
+    {"id": "google/gemini-3-flash-preview", "name": "Google - Gemini 3 Flash Preview (pinned default)", "provider": "Google"},
+    {"id": "anthropic/claude-sonnet-4.6", "name": "Anthropic - Claude Sonnet 4.6 (pinned default)", "provider": "Anthropic"},
 ]
 
 
@@ -401,8 +365,24 @@ async def test_connection(model: str) -> dict:
         return {"success": False, "error": str(e), "latency_ms": int(elapsed * 1000), "model": model}
 
 
+def _format_pricing(pricing: dict) -> str:
+    """Format pricing dict into a readable string like '$0.10/$0.30 per 1M tokens'."""
+    if not pricing:
+        return "free"
+    prompt_price = pricing.get("prompt", "0")
+    completion_price = pricing.get("completion", "0")
+    try:
+        p = float(prompt_price) * 1_000_000
+        c = float(completion_price) * 1_000_000
+        if p == 0 and c == 0:
+            return "free"
+        return f"${p:.2f}/${c:.2f} per 1M tok"
+    except (ValueError, TypeError):
+        return "N/A"
+
+
 async def fetch_models() -> list[dict]:
-    """Fetch available models from OpenRouter API."""
+    """Fetch ALL available models from OpenRouter API with pricing info."""
     headers = {
         "Authorization": f"Bearer {settings.openrouter_api_key}",
         "Content-Type": "application/json",
@@ -414,14 +394,20 @@ async def fetch_models() -> list[dict]:
             data = resp.json()
             models = []
             for m in data.get("data", []):
+                model_id = m.get("id", "")
+                provider = model_id.split("/")[0] if "/" in model_id else ""
+                model_name_raw = m.get("name", model_id)
+                pricing = _format_pricing(m.get("pricing", {}))
+                display_name = f"{provider} - {model_name_raw} - {pricing}"
                 models.append({
-                    "id": m.get("id", ""),
-                    "name": m.get("name", m.get("id", "")),
-                    "provider": m.get("id", "").split("/")[0] if "/" in m.get("id", "") else "",
+                    "id": model_id,
+                    "name": display_name,
+                    "provider": provider,
                     "context_length": m.get("context_length", 0),
+                    "pricing": pricing,
                 })
-            # Sort by context_length descending
-            models.sort(key=lambda x: x.get("context_length", 0), reverse=True)
+            # Sort by provider, then model name
+            models.sort(key=lambda x: (x["provider"].lower(), x["name"].lower()))
             return models
     except Exception as e:
         logger.error(f"Failed to fetch models from OpenRouter: {e}")
