@@ -43,7 +43,7 @@ ISBN: {orig_isbn}
 Description: {orig_description}
 Subjects: {orig_subjects}
 
-### Extracted Text Sample (first ~3000 words)
+### Extracted Text Sample (first ~1000 words)
 {text_sample}
 
 ## AUTHOR NAME RULES
@@ -321,8 +321,9 @@ async def enrich_book(book_data: dict) -> dict:
         "secondary_raw": None,
     }
 
-    # Conditional secondary call
-    if primary["confidence"] is not None and primary["confidence"] < 0.75:
+    # Conditional secondary call — only for genuinely uncertain results
+    # (~5-10% of books should trigger this with a 0.5 threshold)
+    if primary["confidence"] is not None and primary["confidence"] < 0.5:
         secondary_model = settings.openrouter_model_secondary
         try:
             secondary_raw = await _call_openrouter(secondary_model, prompt)

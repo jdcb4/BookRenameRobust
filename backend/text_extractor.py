@@ -8,11 +8,11 @@ warnings.filterwarnings("ignore", category=FutureWarning, module="ebooklib")
 from bs4 import BeautifulSoup
 from ebooklib import epub
 
-TARGET_WORDS = 3000
+TARGET_WORDS = 1000
 
 
 def extract_text_sample(epub_path: str) -> str:
-    """Extract the first ~3000 words of readable body text from an EPUB.
+    """Extract the first ~1000 words of readable body text from an EPUB.
 
     Walks the spine items, strips HTML, and concatenates text until the
     word target is reached.

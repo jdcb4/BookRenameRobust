@@ -378,7 +378,7 @@ async def _process_book(fpath: str, md5_hash: str, job_id: int, sem: asyncio.Sem
     book_data = {
         "relative_path": relative_dir,
         "file_name": fname,
-        "text_sample": text_sample[:15000],  # cap prompt size
+        "text_sample": text_sample[:5000],  # cap prompt size
         "open_library_data": None,
         **epub_meta,
     }
